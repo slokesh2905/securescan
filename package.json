@@ -1,0 +1,5 @@
+{
+  "name": "securescan-frontend",
+  "private": true,
+  "description": "SecureScan static frontend — backend lives on Render"
+}

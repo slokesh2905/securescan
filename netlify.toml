@@ -1,5 +1,10 @@
 [build]
-  # Netlify only serves the static frontend (index.html).
-  # There is no build step — skip all dependency installation.
+  # Pure static site — no build step needed.
+  # The package.json in root stops Netlify auto-detecting Python/pip.
   command   = ""
   publish   = "."
+
+[build.environment]
+  # Skip npm install since there are no JS dependencies.
+  NPM_FLAGS = "--version"
+  NODE_VERSION = "20"
