@@ -8,10 +8,6 @@ __pycache__/
 dist/
 build/
 
-# Node (package.json is checked in, but never install anything)
-node_modules/
-
-
 # Environment & secrets
 .env
 .env.*

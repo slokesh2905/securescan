@@ -16,8 +16,9 @@
 [![Flask](https://img.shields.io/badge/Flask-2.3.3-00ff41?style=for-the-badge&logo=flask&logoColor=black&labelColor=0d1117)](https://flask.palletsprojects.com)
 [![PostgreSQL](https://img.shields.io/badge/Neon-PostgreSQL-00ff41?style=for-the-badge&logo=postgresql&logoColor=black&labelColor=0d1117)](https://neon.tech)
 [![Render](https://img.shields.io/badge/Backend-Render-00ff41?style=for-the-badge&logo=render&logoColor=black&labelColor=0d1117)](https://render.com)
-[![Netlify](https://img.shields.io/badge/Frontend-Netlify-00ff41?style=for-the-badge&logo=netlify&logoColor=black&labelColor=0d1117)](https://netlify.com)
+[![Vercel](https://img.shields.io/badge/Frontend-Vercel-00ff41?style=for-the-badge&logo=vercel&logoColor=black&labelColor=0d1117)](https://vercel.com)
 [![License](https://img.shields.io/badge/License-MIT-00ff41?style=for-the-badge&logoColor=black&labelColor=0d1117)](LICENSE)
+[![Live Demo](https://img.shields.io/badge/🔴_LIVE-securescan--gray.vercel.app-00ff41?style=for-the-badge&labelColor=0d1117)](https://securescan-gray.vercel.app)
 
 <br/>
 
@@ -32,6 +33,20 @@
 **SecureScan** is a passive web vulnerability scanner that audits any public-facing URL for common security misconfigurations — no active exploitation, no traffic floods. Just clean, structured findings delivered through a slick dark-mode UI.
 
 Designed for developers, security researchers, and bug bounty hunters who want fast security insights without spinning up a full pentest suite.
+
+---
+
+## `> LIVE DEMO`
+
+<div align="center">
+
+### 🔴 [`https://securescan-gray.vercel.app`](https://securescan-gray.vercel.app)
+
+*Paste any public URL and hit Scan — results appear in seconds.*
+
+</div>
+
+
 
 ---
 
@@ -68,7 +83,7 @@ Designed for developers, security researchers, and bug bounty hunters who want f
 
 ```
                      ┌─────────────────┐
-         User ──────▶│  Netlify CDN    │
+         User ──────▶│  Vercel CDN     │
                      │   index.html    │
                      └────────┬────────┘
                               │  fetch() REST calls
@@ -225,9 +240,15 @@ curl http://localhost:5000/health
 2. Copy the connection string
 3. Set it as `DATABASE_URL` in Render's environment variables
 
-### Frontend → Netlify
+### Frontend → Vercel
 1. Update `BASE_URL` in `index.html` to your Render service URL
-2. Drag-and-drop `index.html` at [netlify.com](https://netlify.com)
+2. Import your GitHub repo at [vercel.com](https://vercel.com/new)
+3. Set **Application Preset** → `Other`
+4. Expand **Build and Output Settings**:
+   - Build Command: *(empty)*
+   - Output Directory: `.`
+   - Install Command: `echo skip`
+5. Click **Deploy**
 
 ---
 
