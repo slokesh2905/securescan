@@ -82,6 +82,8 @@ def init_db() -> None:
     Create the ``scans`` and ``findings`` tables if they do not already
     exist.  Safe to call on every application start-up.
     """
+    # psycopg2 only allows one statement per execute() call.
+    # Split into two separate calls.
     with _get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -92,7 +94,10 @@ def init_db() -> None:
                     status     TEXT        NOT NULL DEFAULT 'pending',
                     created_at TIMESTAMPTZ NOT NULL
                 );
-
+                """
+            )
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS findings (
                     id             SERIAL  PRIMARY KEY,
                     scan_id        INTEGER NOT NULL

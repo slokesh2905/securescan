@@ -53,6 +53,12 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
+# Initialise DB schema at import time so both `python app.py` and
+# `gunicorn app:app` create the tables before handling any requests.
+models.init_db()
+log.info("Database initialised (PostgreSQL / Neon)")
+
+
 
 # ---------------------------------------------------------------------------
 # Private-IP / SSRF guard
@@ -288,14 +294,9 @@ def health():
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # Initialise the database schema before accepting requests.
-    models.init_db()
-    log.info("Database initialised (PostgreSQL / Neon)")
-
-    # Read PORT from the environment so Render (and similar platforms) can
-    # inject the correct port.  Falls back to 5000 for local development.
     port = int(os.environ.get("PORT", 5000))
 
     # debug=False is intentional — the reloader spawns a child process that
     # conflicts with daemon threads on Windows.
     app.run(host="0.0.0.0", port=port, debug=False)
+
