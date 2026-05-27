@@ -1,0 +1,5 @@
+[build]
+  # Netlify only serves the static frontend (index.html).
+  # There is no build step — skip all dependency installation.
+  command   = ""
+  publish   = "."
