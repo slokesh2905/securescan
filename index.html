@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SecureScan — Web Vulnerability Scanner</title>
+<meta name="description" content="SecureScan: passive web vulnerability scanner. Detect missing security headers, cookie flags, SQLi errors, and open redirects.">
+<style>
+/* ── Reset & tokens ─────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #0f1117;
+  --surface:   #161b27;
+  --surface2:  #1c2333;
+  --border:    #2a3048;
+  --text:      #c9d1d9;
+  --muted:     #6e7b8f;
+  --accent:    #58a6ff;
+  --sev-crit:  #f85149;
+  --sev-high:  #e8843a;
+  --sev-med:   #d29922;
+  --sev-info:  #5a6a7a;
+  --font-ui:   'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+
+html { font-size: 15px; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  min-height: 100vh;
+  line-height: 1.6;
+}
+
+a { color: var(--accent); text-decoration: none; }
+
+/* ── Fonts ──────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ── Layout ─────────────────────────────────────────────────────────── */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2rem;
+  height: 56px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 100;
+}
+
+.wordmark {
+  font-family: var(--font-mono);
+  font-size: 1.15rem;
+  font-weight: 500;
+  color: #fff;
+  letter-spacing: -0.02em;
+}
+.wordmark span { color: var(--accent); }
+
+.tagline {
+  font-size: 0.75rem;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.main {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 4rem;
+}
+
+/* ── Scan input ─────────────────────────────────────────────────────── */
+.scan-box {
+  display: flex;
+  gap: 0;
+  margin-bottom: 2.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+  transition: border-color .2s;
+}
+.scan-box:focus-within { border-color: var(--accent); }
+
+#url-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  padding: 0.85rem 1rem;
+  caret-color: var(--accent);
+}
+#url-input::placeholder { color: var(--muted); }
+
+#scan-btn {
+  background: var(--accent);
+  color: #0d1117;
+  border: none;
+  padding: 0.85rem 1.5rem;
+  font-family: var(--font-ui);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, opacity .15s;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+#scan-btn:hover { background: #79c0ff; }
+#scan-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ── Status bar ─────────────────────────────────────────────────────── */
+#status-bar {
+  display: none;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+#status-bar.visible { display: flex; }
+
+.spinner {
+  width: 16px; height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+#status-text { color: var(--text); }
+#status-text .done  { color: #3fb950; }
+#status-text .error { color: var(--sev-crit); }
+#status-text .count {
+  font-family: var(--font-mono);
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+
+/* ── Findings ───────────────────────────────────────────────────────── */
+#findings-list { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 2.5rem; }
+
+.finding-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--sev-info);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.finding-card[data-sev="critical"] { border-left-color: var(--sev-crit); }
+.finding-card[data-sev="high"]     { border-left-color: var(--sev-high); }
+.finding-card[data-sev="medium"]   { border-left-color: var(--sev-med);  }
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  user-select: none;
+}
+.card-header:hover { background: var(--surface2); }
+
+.sev-badge {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 500;
+  padding: 2px 7px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.badge-critical { background: rgba(248,81,73,.18); color: var(--sev-crit); }
+.badge-high     { background: rgba(232,132,58,.18); color: var(--sev-high); }
+.badge-medium   { background: rgba(210,153,34,.18); color: var(--sev-med);  }
+.badge-info     { background: rgba(90,106,122,.18); color: #8b9ab0; }
+
+.card-title {
+  flex: 1;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #e6edf3;
+  font-family: var(--font-mono);
+}
+
+.card-chevron {
+  color: var(--muted);
+  font-size: 0.75rem;
+  transition: transform .2s;
+}
+.finding-card.open .card-chevron { transform: rotate(90deg); }
+
+.card-body {
+  display: none;
+  padding: 0 1rem 1rem;
+  border-top: 1px solid var(--border);
+}
+.finding-card.open .card-body { display: block; }
+
+.card-body p { margin-top: 0.75rem; font-size: 0.855rem; color: var(--text); line-height: 1.65; }
+.card-body .label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 600;
+  margin-top: 0.9rem;
+  margin-bottom: 0.2rem;
+}
+.card-body .recommendation {
+  font-size: 0.84rem;
+  color: #a5d6ff;
+  background: rgba(88,166,255,.07);
+  border-left: 2px solid var(--accent);
+  padding: 0.5rem 0.75rem;
+  border-radius: 0 4px 4px 0;
+}
+
+/* ── Empty state ─────────────────────────────────────────────────────── */
+#empty-state {
+  text-align: center;
+  padding: 3rem 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+  display: none;
+}
+#empty-state.visible { display: block; }
+#empty-state .icon { font-size: 2.5rem; margin-bottom: 0.75rem; opacity: .5; }
+
+/* ── History ─────────────────────────────────────────────────────────── */
+.section-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.5rem;
+}
+
+#history-list { display: flex; flex-direction: column; gap: 0.35rem; }
+
+.hist-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: border-color .15s;
+  font-size: 0.82rem;
+}
+.hist-row:hover { border-color: var(--accent); }
+
+.hist-url {
+  flex: 1;
+  font-family: var(--font-mono);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.8rem;
+}
+
+.hist-status {
+  font-size: 0.7rem;
+  padding: 1px 7px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+.hist-status.pending { background: rgba(88,166,255,.15); color: var(--accent); }
+.hist-status.done    { background: rgba(63,185,80,.15);  color: #3fb950; }
+.hist-status.error   { background: rgba(248,81,73,.15);  color: var(--sev-crit); }
+
+.hist-count {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.hist-id {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+/* ── Divider ─────────────────────────────────────────────────────────── */
+.divider { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+</style>
+</head>
+<body>
+
+<!-- ── Top bar ──────────────────────────────────────────────────────── -->
+<header class="topbar">
+  <div class="wordmark">Secure<span>Scan</span></div>
+  <div class="tagline">passive web vulnerability scanner</div>
+</header>
+
+<!-- ── Main content ─────────────────────────────────────────────────── -->
+<main class="main">
+
+  <!-- Scan input -->
+  <div class="scan-box">
+    <input id="url-input" type="url" placeholder="https://target.example.com"
+           autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Target URL">
+    <button id="scan-btn">Scan</button>
+  </div>
+
+  <!-- Status bar -->
+  <div id="status-bar" role="status" aria-live="polite">
+    <div class="spinner" id="spinner"></div>
+    <div id="status-text"></div>
+  </div>
+
+  <!-- Finding cards -->
+  <div id="findings-list" aria-label="Scan findings"></div>
+
+  <!-- Empty state -->
+  <div id="empty-state">
+    <div class="icon">&#x2713;</div>
+    <div>No findings detected — all checks passed.</div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- History -->
+  <div class="section-label">Recent Scans</div>
+  <div id="history-list" aria-label="Scan history"></div>
+
+</main>
+
+<script>
+// ── Config ───────────────────────────────────────────────────────────
+// Change BASE_URL if your Flask API runs on a different host/port.
+const BASE_URL = 'http://localhost:5000';
+
+// ── State ────────────────────────────────────────────────────────────
+let pollTimer   = null;   // active setInterval handle
+let activeScanId = null;  // scan currently being polled
+let history     = [];     // [{scan_id, url, status, findings_count}]
+
+// ── DOM refs ─────────────────────────────────────────────────────────
+const urlInput     = document.getElementById('url-input');
+const scanBtn      = document.getElementById('scan-btn');
+const statusBar    = document.getElementById('status-bar');
+const statusText   = document.getElementById('status-text');
+const spinner      = document.getElementById('spinner');
+const findingsList = document.getElementById('findings-list');
+const emptyState   = document.getElementById('empty-state');
+const historyList  = document.getElementById('history-list');
+
+// ── Severity helpers ─────────────────────────────────────────────────
+const SEV_CLASS = { critical:'badge-critical', high:'badge-high', medium:'badge-medium', info:'badge-info' };
+
+function severityLabel(s) {
+  return { critical:'CRITICAL', high:'HIGH', medium:'MEDIUM', info:'INFO' }[s] || s.toUpperCase();
+}
+
+// ── Escape HTML ───────────────────────────────────────────────────────
+function esc(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+// ── Finding card ──────────────────────────────────────────────────────
+function buildCard(f) {
+  const sev   = (f.severity || 'info').toLowerCase();
+  const badge = SEV_CLASS[sev] || 'badge-info';
+  const card  = document.createElement('div');
+  card.className = 'finding-card';
+  card.dataset.sev = sev;
+  card.innerHTML = `
+    <div class="card-header" role="button" tabindex="0" aria-expanded="false">
+      <span class="sev-badge ${badge}">${severityLabel(sev)}</span>
+      <span class="card-title">${esc(f.check_name)}</span>
+      <span class="card-chevron">&#x25B6;</span>
+    </div>
+    <div class="card-body">
+      <div class="label">Description</div>
+      <p>${esc(f.description)}</p>
+      <div class="label">Recommendation</div>
+      <div class="recommendation">${esc(f.recommendation)}</div>
+    </div>`;
+
+  const header = card.querySelector('.card-header');
+  function toggle() {
+    card.classList.toggle('open');
+    header.setAttribute('aria-expanded', card.classList.contains('open'));
+  }
+  header.addEventListener('click', toggle);
+  header.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+  return card;
+}
+
+// ── Render findings ───────────────────────────────────────────────────
+function renderFindings(findings) {
+  findingsList.innerHTML = '';
+  emptyState.classList.remove('visible');
+  if (!findings || findings.length === 0) {
+    emptyState.classList.add('visible');
+    return;
+  }
+  findings.forEach(f => findingsList.appendChild(buildCard(f)));
+}
+
+// ── Status bar helpers ────────────────────────────────────────────────
+function showStatus(html, { spinning = false } = {}) {
+  statusBar.classList.add('visible');
+  statusText.innerHTML = html;
+  spinner.style.display = spinning ? 'block' : 'none';
+}
+function hideStatus() {
+  statusBar.classList.remove('visible');
+}
+
+// ── History ───────────────────────────────────────────────────────────
+function pushHistory(entry) {
+  // Deduplicate by scan_id; update in-place if already present.
+  const idx = history.findIndex(h => h.scan_id === entry.scan_id);
+  if (idx !== -1) { history[idx] = entry; } else { history.unshift(entry); }
+  if (history.length > 10) history = history.slice(0, 10);
+  renderHistory();
+}
+
+function renderHistory() {
+  historyList.innerHTML = '';
+  if (history.length === 0) {
+    historyList.innerHTML = '<div style="color:var(--muted);font-size:.82rem;padding:.5rem .75rem">No scans yet.</div>';
+    return;
+  }
+  history.forEach(h => {
+    const row = document.createElement('div');
+    row.className = 'hist-row';
+    row.title = `Load scan #${h.scan_id}`;
+
+    let countStr = '';
+    if (h.status === 'done') countStr = `${h.findings_count ?? '?'} finding${(h.findings_count !== 1) ? 's' : ''}`;
+    if (h.status === 'error') countStr = 'error';
+
+    row.innerHTML = `
+      <span class="hist-id">#${h.scan_id}</span>
+      <span class="hist-url">${esc(h.url)}</span>
+      <span class="hist-status ${h.status}">${h.status}</span>
+      ${countStr ? `<span class="hist-count">${esc(countStr)}</span>` : ''}`;
+
+    row.addEventListener('click', () => loadScan(h.scan_id, h.url));
+    historyList.appendChild(row);
+  });
+}
+
+// ── Poll scan result ──────────────────────────────────────────────────
+async function pollResult(scanId, url) {
+  let resp, data;
+  try {
+    resp = await fetch(`${BASE_URL}/results/${scanId}`);
+    data = await resp.json();
+  } catch(e) {
+    showStatus(`<span class="error">Network error — ${esc(String(e))}</span>`);
+    stopPolling();
+    return;
+  }
+
+  if (data.status === 'pending') {
+    showStatus(`<span>Scanning <code style="font-family:var(--font-mono);font-size:.82rem;color:var(--accent)">${esc(url)}</code>&hellip;</span>`, { spinning: true });
+    pushHistory({ scan_id: scanId, url, status: 'pending' });
+    return; // keep polling
+  }
+
+  stopPolling();
+
+  if (data.status === 'done') {
+    const n = data.findings ? data.findings.length : 0;
+    showStatus(`<span class="done">Complete</span> &mdash; <span class="count">${n} finding${n !== 1 ? 's' : ''}</span> on <code style="font-family:var(--font-mono);font-size:.82rem">${esc(url)}</code>`);
+    renderFindings(data.findings || []);
+    pushHistory({ scan_id: scanId, url, status: 'done', findings_count: n });
+    scanBtn.disabled = false;
+  } else {
+    const errFinding = data.findings && data.findings.find(f => f.check_name === 'Scanner Error');
+    const msg = errFinding ? errFinding.description : 'Unknown error';
+    showStatus(`<span class="error">Error:</span> ${esc(msg)}`);
+    pushHistory({ scan_id: scanId, url, status: 'error' });
+    scanBtn.disabled = false;
+  }
+}
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+// ── Load an existing scan (from history) ──────────────────────────────
+async function loadScan(scanId, url) {
+  stopPolling();
+  findingsList.innerHTML = '';
+  emptyState.classList.remove('visible');
+  showStatus(`<span>Loading scan #${scanId}&hellip;</span>`, { spinning: true });
+
+  let resp, data;
+  try {
+    resp = await fetch(`${BASE_URL}/results/${scanId}`);
+    data = await resp.json();
+  } catch(e) {
+    showStatus(`<span class="error">Network error</span>`);
+    return;
+  }
+
+  if (data.status === 'pending') {
+    // Resume polling
+    activeScanId = scanId;
+    showStatus(`<span>Scan #${scanId} still running&hellip;</span>`, { spinning: true });
+    pollTimer = setInterval(() => pollResult(scanId, url || data.url || ''), 2000);
+    return;
+  }
+
+  const n = data.findings ? data.findings.length : 0;
+  if (data.status === 'done') {
+    showStatus(`<span class="done">Complete</span> &mdash; <span class="count">${n} finding${n !== 1 ? 's' : ''}</span> on <code style="font-family:var(--font-mono);font-size:.82rem">${esc(data.url || url)}</code>`);
+    renderFindings(data.findings || []);
+    pushHistory({ scan_id: scanId, url: data.url || url, status: 'done', findings_count: n });
+  } else {
+    showStatus(`<span class="error">Scan #${scanId} errored.</span>`);
+    pushHistory({ scan_id: scanId, url: data.url || url, status: 'error' });
+  }
+}
+
+// ── Start scan ────────────────────────────────────────────────────────
+async function startScan() {
+  const url = urlInput.value.trim();
+  if (!url) { urlInput.focus(); return; }
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    showStatus('<span class="error">URL must start with http:// or https://</span>');
+    return;
+  }
+
+  stopPolling();
+  findingsList.innerHTML = '';
+  emptyState.classList.remove('visible');
+  scanBtn.disabled = true;
+  showStatus(`<span>Submitting scan&hellip;</span>`, { spinning: true });
+
+  let resp, data;
+  try {
+    resp = await fetch(`${BASE_URL}/scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    data = await resp.json();
+  } catch(e) {
+    showStatus(`<span class="error">Could not reach API — is Flask running on port 5000?</span>`);
+    scanBtn.disabled = false;
+    return;
+  }
+
+  if (!resp.ok) {
+    showStatus(`<span class="error">${esc(data.error || 'API error')}</span>`);
+    scanBtn.disabled = false;
+    return;
+  }
+
+  const scanId = data.scan_id;
+  activeScanId = scanId;
+  showStatus(`<span>Scanning <code style="font-family:var(--font-mono);font-size:.82rem;color:var(--accent)">${esc(url)}</code>&hellip;</span>`, { spinning: true });
+  pushHistory({ scan_id: scanId, url, status: 'pending' });
+
+  // Immediate poll then every 2s
+  pollResult(scanId, url);
+  pollTimer = setInterval(() => pollResult(scanId, url), 2000);
+}
+
+// ── Event wiring ──────────────────────────────────────────────────────
+scanBtn.addEventListener('click', startScan);
+urlInput.addEventListener('keydown', e => { if (e.key === 'Enter') startScan(); });
+
+// ── Init ──────────────────────────────────────────────────────────────
+renderHistory();
+urlInput.focus();
+</script>
+</body>
+</html>
