@@ -47,6 +47,32 @@ def _has_flag(set_cookie_value: str, flag: str) -> bool:
     return flag.lower() in parts
 
 
+def _has_attribute(set_cookie_value: str, attribute: str) -> bool:
+    """
+    Return True if *attribute* is present either as a standalone flag
+    (e.g. ``Secure``) or as a key=value attribute (e.g. ``SameSite=Lax``).
+    """
+    for part in set_cookie_value.split(";"):
+        key = part.strip().split("=", 1)[0].strip().lower()
+        if key == attribute.lower():
+            return True
+    return False
+
+
+def _redacted_attributes(set_cookie_value: str) -> str:
+    """
+    Return the Set-Cookie directive with the cookie *value* redacted,
+    leaving the name and all attributes intact.  Used as evidence so a
+    finding can be verified without disclosing session material.
+    """
+    parts = [p.strip() for p in set_cookie_value.split(";") if p.strip()]
+    if not parts:
+        return "<empty Set-Cookie>"
+    name, sep, _ = parts[0].partition("=")
+    parts[0] = f"{name.strip()}=<redacted>" if sep else parts[0]
+    return "; ".join(parts)
+
+
 # ---------------------------------------------------------------------------
 # Public interface
 # ---------------------------------------------------------------------------
@@ -94,6 +120,7 @@ def check(response: "requests.Response") -> list[Finding]:
 
     for raw_value in set_cookie_values:
         cookie_name = _parse_cookie_name(raw_value)
+        evidence = f"Set-Cookie: {_redacted_attributes(raw_value)}"
 
         if not _has_flag(raw_value, "httponly"):
             findings.append(
@@ -109,6 +136,7 @@ def check(response: "requests.Response") -> list[Finding]:
                         f"Set the HttpOnly attribute on '{cookie_name}': "
                         "Set-Cookie: {name}=<value>; HttpOnly; ..."
                     ),
+                    "evidence": evidence,
                 }
             )
 
@@ -126,6 +154,26 @@ def check(response: "requests.Response") -> list[Finding]:
                         f"Set the Secure attribute on '{cookie_name}': "
                         "Set-Cookie: {name}=<value>; Secure; ..."
                     ),
+                    "evidence": evidence,
+                }
+            )
+
+        if not _has_attribute(raw_value, "samesite"):
+            findings.append(
+                {
+                    "check_name": f"Cookie Missing SameSite: {cookie_name}",
+                    "severity": "info",
+                    "description": (
+                        f"The cookie '{cookie_name}' is set without an explicit "
+                        "SameSite attribute. Browsers default to 'Lax', but setting "
+                        "it explicitly documents intent and, where 'Strict' is "
+                        "appropriate, reduces exposure to cross-site request forgery."
+                    ),
+                    "recommendation": (
+                        f"Set an explicit SameSite attribute on '{cookie_name}', "
+                        "e.g. 'SameSite=Lax' or 'SameSite=Strict' for session cookies."
+                    ),
+                    "evidence": evidence,
                 }
             )
 

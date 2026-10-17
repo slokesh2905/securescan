@@ -105,9 +105,16 @@ def init_db() -> None:
                     check_name     TEXT    NOT NULL,
                     severity       TEXT    NOT NULL,
                     description    TEXT    NOT NULL,
-                    recommendation TEXT    NOT NULL
+                    recommendation TEXT    NOT NULL,
+                    evidence       TEXT    NOT NULL DEFAULT ''
                 );
                 """
+            )
+            # Migration for databases created before the evidence column
+            # existed. ADD COLUMN IF NOT EXISTS is a no-op when present.
+            cur.execute(
+                "ALTER TABLE findings "
+                "ADD COLUMN IF NOT EXISTS evidence TEXT NOT NULL DEFAULT ''"
             )
 
 
@@ -188,6 +195,7 @@ def insert_findings(scan_id: int, findings: list[dict[str, Any]]) -> None:
             f["severity"],
             f["description"],
             f["recommendation"],
+            f.get("evidence", ""),
         )
         for f in findings
     ]
@@ -199,8 +207,9 @@ def insert_findings(scan_id: int, findings: list[dict[str, Any]]) -> None:
                 cur,
                 """
                 INSERT INTO findings
-                    (scan_id, check_name, severity, description, recommendation)
-                VALUES (%s, %s, %s, %s, %s)
+                    (scan_id, check_name, severity, description,
+                     recommendation, evidence)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 """,
                 rows,
             )
@@ -215,7 +224,8 @@ def get_findings(scan_id: int) -> list[dict[str, Any]]:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, scan_id, check_name, severity, description, recommendation
+                SELECT id, scan_id, check_name, severity, description,
+                       recommendation, evidence
                 FROM findings
                 WHERE scan_id = %s
                 ORDER BY

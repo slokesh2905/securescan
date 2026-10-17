@@ -28,6 +28,7 @@ from __future__ import annotations
 import ipaddress
 import logging
 import os
+import socket
 import threading
 from urllib.parse import urlparse
 
@@ -81,6 +82,11 @@ _BLOCKED_HOSTNAMES: frozenset[str] = frozenset(
 )
 
 
+def _is_blocked_ip(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Return True if *addr* falls inside any blocked (private/reserved) range."""
+    return any(addr in network for network in _BLOCKED_NETWORKS)
+
+
 def _validate_url(url: str) -> str | None:
     """
     Validate *url* for use as a scan target.
@@ -116,17 +122,37 @@ def _validate_url(url: str) -> str | None:
     # If the hostname is a bare IP address, reject private/loopback ranges.
     try:
         addr = ipaddress.ip_address(hostname)
-        for network in _BLOCKED_NETWORKS:
-            if addr in network:
-                return (
-                    f"Scanning private/reserved IP address '{hostname}' "
-                    "is not permitted."
-                )
     except ValueError:
-        # Not an IP address — hostname will be resolved at scan time.
-        # We cannot reliably block DNS rebinding here without an actual
-        # lookup; the network-layer check is the primary guard.
-        pass
+        addr = None
+
+    if addr is not None:
+        if _is_blocked_ip(addr):
+            return (
+                f"Scanning private/reserved IP address '{hostname}' "
+                "is not permitted."
+            )
+        return None  # literal public IP — acceptable
+
+    # Hostname: resolve it and reject if *any* resolved address is private,
+    # loopback, or link-local. This blocks names that point at internal
+    # hosts or the cloud metadata endpoint (169.254.169.254) — a server-side
+    # request forgery (SSRF) risk, since the scanner fetches the URL itself.
+    try:
+        resolved = socket.getaddrinfo(hostname, None)
+    except socket.gaierror:
+        return f"Hostname '{hostname}' could not be resolved."
+
+    for family, _type, _proto, _canon, sockaddr in resolved:
+        ip_str = sockaddr[0]
+        try:
+            resolved_addr = ipaddress.ip_address(ip_str)
+        except ValueError:
+            continue
+        if _is_blocked_ip(resolved_addr):
+            return (
+                f"Hostname '{hostname}' resolves to a private/reserved "
+                f"address ({ip_str}); scanning it is not permitted."
+            )
 
     return None  # URL is acceptable
 

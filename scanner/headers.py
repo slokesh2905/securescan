@@ -89,20 +89,52 @@ def check(response: "requests.Response") -> list[Finding]:
     -------
     list[Finding]
         One Finding per missing header; empty list when all are present.
+        Every finding records the exact response it was observed on
+        (final URL + status code) so the absence can be independently
+        verified.
     """
     findings: list[Finding] = []
+
+    # The response object reflects the *final* hop after redirects, so the
+    # scheme/URL used for evidence is the one the headers actually came from.
+    final_url = response.url or ""
+    is_https = final_url.lower().startswith("https://")
+    status = response.status_code
+    csp_value = response.headers.get("Content-Security-Policy", "") or ""
 
     # requests normalises header names to title-case, so a case-insensitive
     # lookup via response.headers is already handled by the CaseInsensitiveDict.
     for header_name, severity, description, recommendation in _REQUIRED_HEADERS:
-        if header_name not in response.headers:
-            findings.append(
-                {
-                    "check_name": f"Missing Header: {header_name}",
-                    "severity": severity,
-                    "description": description,
-                    "recommendation": recommendation,
-                }
-            )
+        if header_name in response.headers:
+            continue
+
+        # Correctness refinements — only report findings we can justify:
+        #
+        # * HSTS is ignored by browsers when a page is served over plain
+        #   HTTP, so a "missing HSTS" finding on an HTTP response is not
+        #   actionable. Only flag it on HTTPS responses.
+        if header_name == "Strict-Transport-Security" and not is_https:
+            continue
+
+        # * X-Frame-Options only matters for clickjacking if the page is
+        #   not already protected by a CSP 'frame-ancestors' directive.
+        if (
+            header_name == "X-Frame-Options"
+            and "frame-ancestors" in csp_value.lower()
+        ):
+            continue
+
+        findings.append(
+            {
+                "check_name": f"Missing Header: {header_name}",
+                "severity": severity,
+                "description": description,
+                "recommendation": recommendation,
+                "evidence": (
+                    f"Response from {final_url} (HTTP {status}) did not "
+                    f"include a '{header_name}' header."
+                ),
+            }
+        )
 
     return findings

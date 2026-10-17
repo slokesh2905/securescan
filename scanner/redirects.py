@@ -220,6 +220,10 @@ def check(
                         "expected origin. Prefer relative paths over absolute URLs for "
                         "post-action redirects."
                     ),
+                    "evidence": (
+                        f"GET {probe_url} -> HTTP {probe_resp.status_code}, "
+                        f"Location: {location}"
+                    ),
                 }
             )
 

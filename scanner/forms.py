@@ -67,9 +67,15 @@ _FUZZABLE_INPUT_TYPES: frozenset[str] = frozenset(
     {"text", "search", "email", "url", "tel", "password", ""}
 )
 
-# Disclaimer appended to every SQLi finding.
+# A harmless, high-entropy token used to establish a per-field baseline.
+# If the target already leaks a database error for this benign value, the
+# error cannot be attributed to our payload and the field is skipped.
+_BASELINE_TOKEN = "securescan7a3f9b2cbaseline"
+
+# Note appended to every SQLi finding describing the evidence basis.
 _DISCLAIMER = (
-    "Error-based detection only. Verify manually before reporting."
+    "A benign baseline request to the same field did not return this error, "
+    "so the error is attributable to the injected quote."
 )
 
 # Browser-like User-Agent shared by all probe requests.
@@ -176,47 +182,54 @@ def _probe_form(
     inspect the response body.  Returns a list of findings (may be empty).
     """
     findings: list[Finding] = []
-    # Track (field, payload) pairs already confirmed vulnerable so we
-    # don't emit duplicate findings for the same injection point.
-    confirmed: set[str] = set()
+
+    def _submit(field_name: str, value: str):
+        """Submit the form with *value* in *field_name*; return response or None."""
+        data = dict(form["fields"])
+        data[field_name] = value
+        try:
+            if form["method"] == "post":
+                return session.post(form["action"], data=data, timeout=timeout)
+            return session.get(form["action"], params=data, timeout=timeout)
+        except Exception:
+            # Network errors during probing are skipped so one flaky form
+            # doesn't abort the whole scan.
+            return None
 
     for field_name in form["fuzzable"]:
-        for payload in _SQLI_PAYLOADS:
-            # Build the data dict: keep defaults for other fields,
-            # inject the payload only into the current field.
-            data = dict(form["fields"])
-            data[field_name] = payload
+        # --- Baseline -----------------------------------------------------
+        # Submit a harmless token first. If the endpoint already emits a
+        # database-error signature for benign input, any later match is not
+        # attributable to our payload, so we cannot prove injection — skip.
+        baseline_resp = _submit(field_name, _BASELINE_TOKEN)
+        if baseline_resp is None:
+            continue
+        if _contains_sql_error(baseline_resp.text):
+            continue
 
-            try:
-                if form["method"] == "post":
-                    resp = session.post(
-                        form["action"], data=data, timeout=timeout
-                    )
-                else:
-                    resp = session.get(
-                        form["action"], params=data, timeout=timeout
-                    )
-            except Exception:
-                # Network errors during probing are silently skipped so
-                # one flaky form doesn't abort the whole scan.
+        # --- Probe --------------------------------------------------------
+        for payload in _SQLI_PAYLOADS:
+            resp = _submit(field_name, payload)
+            if resp is None:
                 continue
 
             matched_sig = _contains_sql_error(resp.text)
-            if matched_sig and field_name not in confirmed:
-                confirmed.add(field_name)
+            # Report only when the error appears for the payload but did NOT
+            # appear in the clean baseline above — that difference is the proof.
+            if matched_sig:
                 findings.append(
                     {
                         "check_name": (
-                            f"Possible SQL Injection: field='{field_name}' "
+                            f"SQL Injection (error-based): field='{field_name}' "
                             f"action='{form['action']}'"
                         ),
                         "severity": "high",
                         "description": (
                             f"The form field '{field_name}' (action: {form['action']}) "
                             f"returned a database error signature \"{matched_sig}\" "
-                            f"when submitted with the payload: {payload!r}. "
-                            "This may indicate that user input is concatenated "
-                            "directly into a SQL query without parameterisation. "
+                            f"when submitted with the payload {payload!r}, while a "
+                            "benign baseline value did not. This indicates user input "
+                            "is concatenated into a SQL query without parameterisation. "
                             f"{_DISCLAIMER}"
                         ),
                         "recommendation": (
@@ -225,9 +238,15 @@ def _probe_form(
                             "strings into SQL. Apply an ORM or query-builder that "
                             "enforces safe query construction by default."
                         ),
+                        "evidence": (
+                            f"Baseline value {_BASELINE_TOKEN!r}: no DB error. "
+                            f"Payload {payload!r}: matched signature \"{matched_sig}\" "
+                            f"in the {form['method'].upper()} response from "
+                            f"{form['action']}."
+                        ),
                     }
                 )
-                # Move on to the next field once one payload confirms it.
+                # One confirmed payload is enough for this field.
                 break
 
     return findings

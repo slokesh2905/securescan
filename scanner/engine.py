@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import sys
 import textwrap
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 import requests
 
@@ -44,6 +44,7 @@ class Finding(TypedDict):
     severity: str          # "critical" | "high" | "medium" | "info"
     description: str
     recommendation: str
+    evidence: NotRequired[str]   # observed proof (header absence, matched signature, ...)
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +173,13 @@ def print_findings(findings: list[Finding], url: str) -> None:
         for line in desc_lines:
             print(f"        {line}")
         print()
+
+        evidence = finding.get("evidence")
+        if evidence:
+            print("        Evidence:")
+            for line in textwrap.wrap(evidence, width=70):
+                print(f"          {line}")
+            print()
 
         rec_lines = textwrap.wrap(
             f"=> {finding['recommendation']}", width=72

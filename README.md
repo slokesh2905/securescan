@@ -30,7 +30,7 @@
 
 ## `> OVERVIEW`
 
-**SecureScan** is a passive web vulnerability scanner that audits any public-facing URL for common security misconfigurations — no active exploitation, no traffic floods. Just clean, structured findings delivered through a slick dark-mode UI.
+**SecureScan** is a lightweight, non-destructive web vulnerability scanner that audits any public-facing URL for common security misconfigurations. It inspects the response headers and cookies, and performs light, non-destructive active probing (submitting a single-quote / canary value to same-origin forms and redirect parameters). It never writes, deletes, or attempts to extract data — and every reported finding carries the evidence it was derived from. Clean, structured results are delivered through a slick dark-mode UI.
 
 Designed for developers, security researchers, and bug bounty hunters who want fast security insights without spinning up a full pentest suite.
 
@@ -64,16 +64,13 @@ Designed for developers, security researchers, and bug bounty hunters who want f
 ├─────────────────────────────────────────────────────────────┤
 │  🍪  Cookie Analysis         HttpOnly flag missing          │
 │                               Secure flag missing           │
-│                               SameSite attribute            │
+│                               SameSite attribute missing    │
 ├─────────────────────────────────────────────────────────────┤
-│  💉  SQLi Error Detection    Database error leakage         │
-│                               Stack trace exposure          │
+│  💉  SQLi (error-based)      DB error after injected quote  │
+│                               Benign baseline compared      │
 ├─────────────────────────────────────────────────────────────┤
-│  🔀  Open Redirect           Redirect chain analysis        │
-│                               Parameter-based redirects     │
-├─────────────────────────────────────────────────────────────┤
-│  🌐  Form Analysis           CSRF protection checks         │
-│                               Input field enumeration       │
+│  🔀  Open Redirect           Canary reflected in Location   │
+│                               First-hop, same-domain only   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -202,10 +199,11 @@ curl http://localhost:5000/results/42
   "findings": [
     {
       "id": 1,
-      "check_name": "Missing Content-Security-Policy",
+      "check_name": "Missing Header: Content-Security-Policy",
       "severity": "high",
-      "description": "No CSP header was detected...",
-      "recommendation": "Add a Content-Security-Policy header..."
+      "description": "Content-Security-Policy (CSP) header is missing...",
+      "recommendation": "Add a Content-Security-Policy header...",
+      "evidence": "Response from https://target.example.com/ (HTTP 200) did not include a 'Content-Security-Policy' header."
     }
   ]
 }
@@ -276,8 +274,9 @@ securescan/
 
 ## `> SECURITY NOTES`
 
-- **Passive only** — SecureScan never modifies, writes to, or exploits target systems
-- **SSRF protection** — Private IP ranges (RFC-1918, loopback, link-local) are blocked server-side
+- **Non-destructive** — SecureScan sends only benign test inputs (a single quote and a canary URL); it never writes, deletes, or attempts to extract data from target systems
+- **Evidence-backed** — every finding records the observed proof (missing header on a named response, redacted cookie attributes, the matched DB-error signature with a clean baseline, or the reflected `Location` header)
+- **SSRF protection** — Private/reserved IP ranges (RFC-1918, loopback, link-local, IPv6 ULA) are blocked server-side, including hostnames that *resolve* to those ranges (e.g. the cloud metadata endpoint)
 - **No auth storage** — Zero credentials or session data from scanned targets are persisted
 - **Rate limiting** — Consider adding rate limiting before exposing to the public internet
 
