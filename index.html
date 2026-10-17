@@ -228,6 +228,19 @@ a { color: var(--accent); text-decoration: none; }
   padding: 0.5rem 0.75rem;
   border-radius: 0 4px 4px 0;
 }
+.card-body .evidence {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: #c9d1d9;
+  background: rgba(110,118,129,.12);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.5rem 0.75rem;
+  margin: 0.2rem 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}
 
 /* ── Empty state ─────────────────────────────────────────────────────── */
 #empty-state {
@@ -389,6 +402,9 @@ function buildCard(f) {
   const card  = document.createElement('div');
   card.className = 'finding-card';
   card.dataset.sev = sev;
+  const evidenceBlock = f.evidence
+    ? `<div class="label">Evidence</div><pre class="evidence">${esc(f.evidence)}</pre>`
+    : '';
   card.innerHTML = `
     <div class="card-header" role="button" tabindex="0" aria-expanded="false">
       <span class="sev-badge ${badge}">${severityLabel(sev)}</span>
@@ -398,6 +414,7 @@ function buildCard(f) {
     <div class="card-body">
       <div class="label">Description</div>
       <p>${esc(f.description)}</p>
+      ${evidenceBlock}
       <div class="label">Recommendation</div>
       <div class="recommendation">${esc(f.recommendation)}</div>
     </div>`;
